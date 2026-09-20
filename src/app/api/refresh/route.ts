@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { sql, dbErrorMessage } from "@/lib/db";
-import { SOURCES, fetchFeed, fetchArticleBody, sourceById } from "@/lib/feeds";
+import {
+  SOURCES,
+  fetchFeed,
+  fetchArticleBody,
+  sourceById,
+  bodyKindFor,
+  mapLimit,
+} from "@/lib/feeds";
 import { annotateBody } from "@/lib/dict";
 
 export const runtime = "nodejs";
@@ -8,7 +15,7 @@ export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 /** How many new articles to fully download per source on one refresh. */
-const BODIES_PER_SOURCE = 6;
+const BODIES_PER_SOURCE = 4;
 
 async function refresh(sourceIds: string[]): Promise<{
   added: number;
@@ -20,19 +27,26 @@ async function refresh(sourceIds: string[]): Promise<{
   let added = 0;
   let bodies = 0;
 
-  for (const id of sourceIds) {
+  const sources = sourceIds.flatMap((id) => {
     const source = sourceById(id);
-    if (!source) continue;
+    return source ? [source] : [];
+  });
 
-    let items;
+  // Listings first, in parallel. Thirteen sequential fetches would eat most of
+  // the function's time budget on their own.
+  const listings = await mapLimit(sources, 6, async (source) => {
     try {
-      items = await fetchFeed(source);
+      return { source, items: await fetchFeed(source) };
     } catch (err) {
       errors.push(`${source.id}: ${(err as Error).message}`);
-      continue;
+      return { source, items: [] };
     }
+  });
 
-    const fresh: { id: number; url: string }[] = [];
+  const pending: { id: number; url: string; sourceId: string }[] = [];
+
+  for (const { source, items } of listings) {
+    let fresh = 0;
     for (const item of items) {
       const rows = (await client(
         `insert into articles (url, title, summary, source, published_at)
@@ -41,33 +55,49 @@ async function refresh(sourceIds: string[]): Promise<{
          returning id, url`,
         [item.url, item.title, item.summary, item.source, item.publishedAt],
       )) as { id: number; url: string }[];
-      if (rows.length) {
-        added += 1;
-        fresh.push(rows[0]);
+      if (!rows.length) continue;
+      added += 1;
+      if (fresh < BODIES_PER_SOURCE) {
+        pending.push({ id: rows[0].id, url: rows[0].url, sourceId: source.id });
+        fresh += 1;
       }
     }
+  }
 
-    // Download the readable body for the newest few, so the reader opens fast.
-    for (const row of fresh.slice(0, BODIES_PER_SOURCE)) {
-      try {
-        const body = await fetchArticleBody(row.url);
-        if (!body || body.length < 80) continue;
-        const tokens = annotateBody(body);
-        const charCount = body.replace(/\s/g, "").length;
-        const hardCount = new Set(
-          tokens.flat().filter((t) => t.z && (t.l ?? 7) > 4).map((t) => t.t),
-        ).size;
-        await client(
-          `update articles
-             set body = $2, tokens = $3, char_count = $4, hard_count = $5
-           where id = $1`,
-          [row.id, body, JSON.stringify(tokens), charCount, hardCount],
-        );
-        bodies += 1;
-      } catch (err) {
-        errors.push(`body ${row.url}: ${(err as Error).message}`);
-      }
+  // Download the readable body for the newest few, so the reader opens fast.
+  const fetched = await mapLimit(pending, 5, async (row) => {
+    try {
+      const body = await fetchArticleBody(row.url, bodyKindFor(row.sourceId));
+      if (!body || body.length < 80) return null;
+      return { row, body };
+    } catch (err) {
+      errors.push(`body ${row.url}: ${(err as Error).message}`);
+      return null;
     }
+  });
+
+  for (const hit of fetched) {
+    if (!hit) continue;
+    const { row, body } = hit;
+    const tokens = annotateBody(body);
+    const charCount = body.replace(/\s/g, "").length;
+    const hardCount = new Set(
+      tokens.flat().filter((t) => t.z && (t.l ?? 7) > 4).map((t) => t.t),
+    ).size;
+    // NetEase listings carry keywords rather than a standfirst, so fall back
+    // to the opening line once the body is in hand.
+    const lead = body.split("\n")[0]?.slice(0, 220) ?? "";
+    await client(
+      `update articles
+          set body = $2, tokens = $3, char_count = $4, hard_count = $5,
+              summary = case
+                          when summary is null or summary = '' then $6
+                          else summary
+                        end
+        where id = $1`,
+      [row.id, body, JSON.stringify(tokens), charCount, hardCount, lead],
+    );
+    bodies += 1;
   }
 
   return { added, bodies, errors };

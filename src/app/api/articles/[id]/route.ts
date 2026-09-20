@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql, dbErrorMessage } from "@/lib/db";
 import { annotateBody, vocabulary, type Token } from "@/lib/dict";
-import { fetchArticleBody } from "@/lib/feeds";
+import { fetchArticleBody, bodyKindFor } from "@/lib/feeds";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -47,7 +47,7 @@ export async function GET(
     let tokens = row.tokens;
 
     if (!body) {
-      body = await fetchArticleBody(row.url);
+      body = await fetchArticleBody(row.url, bodyKindFor(row.source));
       if (!body || body.length < 80) {
         return NextResponse.json(
           { error: "Could not read the article text from the publisher." },

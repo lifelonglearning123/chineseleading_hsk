@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 interface Article {
@@ -40,20 +40,29 @@ export default function HomePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Requests can overlap: React runs effects twice in development, and
+  // switching category quickly fires another. Without a guard a slow or failed
+  // earlier response lands last and leaves a stale error sitting above
+  // articles that actually loaded.
+  const requestId = useRef(0);
+
   const load = useCallback(async (source: string | null) => {
+    const id = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
       const qs = source ? `?source=${encodeURIComponent(source)}` : "";
       const res = await fetch(`/api/articles${qs}`);
       const json = await res.json();
+      if (id !== requestId.current) return;
       if (json.sources) setSources(json.sources);
       setArticles(json.articles ?? []);
-      if (json.error) setError(json.error);
+      setError(json.error ?? null);
     } catch (err) {
+      if (id !== requestId.current) return;
       setError((err as Error).message);
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, []);
 
@@ -89,7 +98,7 @@ export default function HomePage() {
       >
         <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>Today&apos;s news</h1>
         <span style={{ fontSize: "0.8125rem", color: "var(--ink-faint)" }}>
-          中国新闻网 · China News Service
+          网易娱乐 · 中国新闻网
         </span>
         <button
           className="chip"
