@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql, dbErrorMessage } from "@/lib/db";
-import { lookup } from "@/lib/dict";
+import { lookup, primaryPinyin } from "@/lib/dict";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,7 +81,15 @@ export async function POST(request: Request) {
              article_id = coalesce(saved_words.article_id, excluded.article_id)`,
       [
         word,
-        entry?.pinyin ?? null,
+        // A multi-character word has one reading, so collapse it. A lone
+        // character often has several and neither CC-CEDICT nor the HSK list
+        // orders them by frequency, so picking one would be a guess: keep them
+        // all and let the reader see the choice.
+        entry
+          ? Array.from(entry.word).length === 1
+            ? entry.pinyin
+            : primaryPinyin(entry.pinyin)
+          : null,
         entry ? entry.defs.slice(0, 3).join("; ") : null,
         entry?.level ?? null,
         context || null,

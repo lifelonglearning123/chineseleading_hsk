@@ -155,6 +155,22 @@ const EXPLANATION_SCHEMA = {
   },
 } as const;
 
+const EXPLANATION_SYSTEM =
+  "You are a Chinese tutor for an English-speaking learner at HSK 4 who is " +
+  "reading mainland news. Explain vocabulary precisely and concretely. " +
+  "Use simplified characters throughout, and write pinyin with tone marks and " +
+  "a space between syllables, like zhà piàn rather than zhàpiàn. Keep every " +
+  "field short enough to read on a phone. Never pad.\n\n" +
+  "Every array in the schema must be non-empty. In particular `examples` must " +
+  "contain exactly two sentences: strict mode cannot enforce that, so it is on " +
+  "you. An explanation without examples is useless to a learner.";
+
+/**
+ * One explanation. The model occasionally returns an empty `examples` array
+ * even though the schema asks for two sentences, because OpenAI strict mode
+ * does not support minItems. One retry costs less than shipping a word panel
+ * with no example in it.
+ */
 export async function explainWord(
   word: string,
   context: string,
@@ -164,37 +180,41 @@ export async function explainWord(
     ? `Dictionary reference (CC-CEDICT): ${dictEntry.pinyin} — ${dictEntry.defs.join("; ")}`
     : "No dictionary entry available; rely on your own knowledge.";
 
-  const res = await client().responses.create({
-    model: MODEL,
-    input: [
-      {
-        role: "system",
-        content:
-          "You are a Chinese tutor for an English-speaking learner at HSK 4 who is " +
-          "reading mainland news. Explain vocabulary precisely and concretely. " +
-          "Use simplified characters and tone-marked pinyin throughout. Keep every " +
-          "field short enough to read on a phone. Never pad.",
+  const ask = async (nudge: string): Promise<Explanation> => {
+    const res = await client().responses.create({
+      model: MODEL,
+      input: [
+        { role: "system", content: EXPLANATION_SYSTEM },
+        {
+          role: "user",
+          content:
+            `Word: ${word}\n` +
+            `Sentence it appeared in: ${context || "(not supplied)"}\n` +
+            `${reference}\n\n` +
+            `Explain this word for me.${nudge}`,
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "word_explanation",
+          strict: true,
+          schema: EXPLANATION_SCHEMA,
+        },
       },
-      {
-        role: "user",
-        content:
-          `Word: ${word}\n` +
-          `Sentence it appeared in: ${context || "(not supplied)"}\n` +
-          `${reference}\n\n` +
-          "Explain this word for me.",
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "word_explanation",
-        strict: true,
-        schema: EXPLANATION_SCHEMA,
-      },
-    },
-  });
+    });
+    return JSON.parse(res.output_text) as Explanation;
+  };
 
-  return JSON.parse(res.output_text) as Explanation;
+  const first = await ask("");
+  if (first.examples?.length) return first;
+
+  const second = await ask(
+    " Your previous attempt left `examples` empty. Return exactly two example " +
+      "sentences this time, each with Chinese, spaced pinyin and an English translation.",
+  );
+  // If the model refuses twice, keep the rest rather than failing the request.
+  return second.examples?.length ? second : first;
 }
 
 export interface SimplifiedArticle {
