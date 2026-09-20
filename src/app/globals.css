@@ -1,0 +1,278 @@
+@import "tailwindcss";
+
+/*
+  Reading-first design system.
+
+  The whole app is a reading surface, so the type scale, line height and
+  contrast are tuned for long passages of Chinese with pinyin sitting above
+  the characters. Colours are warm and low-glare rather than pure white.
+*/
+
+:root {
+  --paper: #f7f4ee;
+  --paper-raised: #fffdf9;
+  --ink: #23201b;
+  --ink-soft: #55504a;
+  --ink-faint: #8b847c;
+  --rule: #e2dcd1;
+  --accent: #0f766e;
+  --accent-soft: #d6ede9;
+  --accent-ink: #0b544e;
+  --saved: #b45309;
+  --saved-soft: #fdf0dc;
+  --shadow: 0 1px 2px rgba(35, 32, 27, 0.05), 0 8px 24px rgba(35, 32, 27, 0.07);
+
+  --reading-size: 1.5rem;
+  --reading-leading: 2.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #16181b;
+    --paper-raised: #1e2125;
+    --ink: #e8e4dd;
+    --ink-soft: #b0aaa1;
+    --ink-faint: #837d75;
+    --rule: #2e3237;
+    --accent: #5eead4;
+    --accent-soft: #15423d;
+    --accent-ink: #99f6e4;
+    --saved: #fbbf24;
+    --saved-soft: #3d2f12;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #16181b;
+  --paper-raised: #1e2125;
+  --ink: #e8e4dd;
+  --ink-soft: #b0aaa1;
+  --ink-faint: #837d75;
+  --rule: #2e3237;
+  --accent: #5eead4;
+  --accent-soft: #15423d;
+  --accent-ink: #99f6e4;
+  --saved: #fbbf24;
+  --saved-soft: #3d2f12;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* System CJK stack: these render Chinese far better than any web font we
+   could ship, and cost nothing to load. */
+.han {
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei New",
+    "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "Noto Sans SC",
+    "WenQuanYi Micro Hei", sans-serif;
+}
+
+/* ---- Reading surface ---------------------------------------------------- */
+
+.reading {
+  font-size: var(--reading-size);
+  line-height: var(--reading-leading);
+  letter-spacing: 0.01em;
+}
+
+/* Each token is its own tap target. Pinyin uses native <ruby>, which the
+   browser positions in the leading above the line for us. */
+.tok {
+  border-radius: 6px;
+  padding: 0 1px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.tok-plain {
+  cursor: default;
+}
+
+.tok:hover:not(.tok-plain) {
+  background: var(--accent-soft);
+}
+
+.tok ruby {
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+.tok rt {
+  font-size: 0.42em;
+  line-height: 1.3;
+  letter-spacing: 0;
+  color: var(--ink-faint);
+  font-family: ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  font-weight: 400;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.tok-active rt {
+  color: var(--paper-raised);
+}
+
+.tok-active {
+  background: var(--accent);
+  color: var(--paper-raised);
+}
+
+.tok-saved {
+  box-shadow: inset 0 -2px 0 var(--saved);
+}
+
+.tok-hard {
+  color: var(--accent-ink);
+}
+
+/* ---- Small shared pieces ------------------------------------------------ */
+
+.card {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s ease;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.chip-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper-raised);
+}
+
+.chip-on:hover {
+  color: var(--paper-raised);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 10px;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  color: var(--ink);
+  padding: 0.5rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper-raised);
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  color: var(--paper-raised);
+}
+
+.level-pill {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+.spin {
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise {
+  animation: rise 0.18s ease-out;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --reading-size: 1.375rem;
+    --reading-leading: 2.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
