@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { sql } from "@/lib/db";
+import { sql, dbErrorMessage } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -9,11 +9,15 @@ export const runtime = "nodejs";
  * rather than to the syllabus.
  */
 export async function GET() {
-  const client = await sql();
-  const rows = (await client(
-    `select word from known_words order by created_at desc`,
-  )) as { word: string }[];
-  return NextResponse.json({ words: rows.map((r) => r.word) });
+  try {
+    const client = await sql();
+    const rows = (await client(
+      `select word from known_words order by created_at desc`,
+    )) as { word: string }[];
+    return NextResponse.json({ words: rows.map((r) => r.word) });
+  } catch (err) {
+    return NextResponse.json({ error: dbErrorMessage(err), words: [] }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {

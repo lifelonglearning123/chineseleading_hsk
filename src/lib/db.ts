@@ -10,18 +10,55 @@ import { neon } from "@neondatabase/serverless";
 let client: ReturnType<typeof neon> | null = null;
 let schemaReady: Promise<void> | null = null;
 
+/** Marker for the connection string shipped in .env.example. */
+const PLACEHOLDER = "user:password@host";
+
+export const SETUP_MESSAGE =
+  "No database connected yet. Create a free Postgres database at neon.tech, " +
+  "or in the Vercel dashboard under Storage, then put its connection string " +
+  "in .env.local as DATABASE_URL and restart. The tables build themselves on " +
+  "the first request.";
+
+export function isConfigured(): boolean {
+  const url = process.env.DATABASE_URL;
+  return Boolean(url && !url.includes(PLACEHOLDER));
+}
+
 export function db() {
   if (!client) {
     const url = process.env.DATABASE_URL;
-    if (!url) {
-      throw new Error(
-        "DATABASE_URL is not set. Attach a Neon Postgres store in the Vercel " +
-          "dashboard (Storage tab), or add the connection string to .env.local.",
-      );
+    if (!url || url.includes(PLACEHOLDER)) {
+      throw new DatabaseSetupError(SETUP_MESSAGE);
     }
     client = neon(url);
   }
   return client;
+}
+
+/** Thrown when there is nothing to connect to, as opposed to a query failing. */
+export class DatabaseSetupError extends Error {
+  readonly setupNeeded = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "DatabaseSetupError";
+  }
+}
+
+/**
+ * Turn a driver error into something worth showing a person. The Neon HTTP
+ * driver reports an unreachable host as "fetch failed", which says nothing.
+ */
+export function dbErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof DatabaseSetupError) return message;
+  if (/fetch failed|ENOTFOUND|ECONNREFUSED|getaddrinfo/i.test(message)) {
+    return (
+      "Could not reach the database. Check that DATABASE_URL in .env.local is " +
+      "a real Neon connection string and that you are online. " +
+      `Driver said: ${message}`
+    );
+  }
+  return message;
 }
 
 /**

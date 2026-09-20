@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { sql } from "@/lib/db";
+import { sql, dbErrorMessage } from "@/lib/db";
 import { lookup } from "@/lib/dict";
 
 export const runtime = "nodejs";
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ words: rows });
   } catch (err) {
     return NextResponse.json(
-      { error: (err as Error).message, words: [] },
+      { error: dbErrorMessage(err), words: [] },
       { status: 500 },
     );
   }
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return NextResponse.json({ error: dbErrorMessage(err) }, { status: 500 });
   }
 }
 

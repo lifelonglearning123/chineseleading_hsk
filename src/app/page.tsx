@@ -129,12 +129,38 @@ export default function HomePage() {
       {error && (
         <div
           className="card"
-          style={{ padding: "1rem", marginBottom: "1rem", borderColor: "var(--saved)" }}
+          style={{ padding: "1.1rem", marginBottom: "1rem", borderColor: "var(--saved)" }}
         >
-          <strong style={{ display: "block", marginBottom: "0.35rem" }}>
-            Something went wrong
+          <strong style={{ display: "block", marginBottom: "0.4rem" }}>
+            {/setupNeeded|No database connected/i.test(error)
+              ? "One step left: connect a database"
+              : "Something went wrong"}
           </strong>
-          <span style={{ fontSize: "0.875rem", color: "var(--ink-soft)" }}>{error}</span>
+          <span style={{ fontSize: "0.875rem", color: "var(--ink-soft)", lineHeight: 1.6 }}>
+            {error}
+          </span>
+          {/No database connected|Could not reach the database/i.test(error) && (
+            <ol
+              style={{
+                fontSize: "0.875rem",
+                color: "var(--ink-soft)",
+                lineHeight: 1.7,
+                margin: "0.85rem 0 0",
+                paddingLeft: "1.2rem",
+              }}
+            >
+              <li>
+                Sign in at <strong>neon.tech</strong> and create a project, or open your
+                Vercel project and add a Neon store under Storage.
+              </li>
+              <li>Copy the connection string it gives you.</li>
+              <li>
+                Paste it into <strong>.env.local</strong> as <code>DATABASE_URL</code>,
+                replacing the example value.
+              </li>
+              <li>Stop the dev server and start it again.</li>
+            </ol>
+          )}
         </div>
       )}
 

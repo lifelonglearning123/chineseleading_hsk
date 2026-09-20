@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { sql } from "@/lib/db";
+import { sql, dbErrorMessage } from "@/lib/db";
 import { SOURCES } from "@/lib/feeds";
 
 export const runtime = "nodejs";
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ articles: rows, sources: SOURCES });
   } catch (err) {
     return NextResponse.json(
-      { error: (err as Error).message, articles: [], sources: SOURCES },
+      { error: dbErrorMessage(err), articles: [], sources: SOURCES },
       { status: 500 },
     );
   }
