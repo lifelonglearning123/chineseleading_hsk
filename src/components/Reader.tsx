@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import WordSheet from "./WordSheet";
 import type { Token } from "@/lib/dict";
 
@@ -32,9 +32,11 @@ interface Settings {
   /** Show pinyin above words at this HSK level or harder. 8 = never, 0 = always. */
   pinyinAbove: number;
   fontScale: number;
+  /** Open articles in the HSK 4 rewrite rather than the original. */
+  autoRewrite: boolean;
 }
 
-const DEFAULT_SETTINGS: Settings = { pinyinAbove: 5, fontScale: 1 };
+const DEFAULT_SETTINGS: Settings = { pinyinAbove: 5, fontScale: 1, autoRewrite: true };
 
 function loadSettings(): Settings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
@@ -75,7 +77,12 @@ export default function Reader({ data }: { data: ReaderData }) {
   const [simplifying, setSimplifying] = useState(false);
   const [simplifyError, setSimplifyError] = useState<string | null>(null);
 
-  useEffect(() => setSettings(loadSettings()), []);
+  const [settingsReady, setSettingsReady] = useState(false);
+
+  useEffect(() => {
+    setSettings(loadSettings());
+    setSettingsReady(true);
+  }, []);
 
   const update = useCallback((patch: Partial<Settings>) => {
     setSettings((prev) => {
@@ -169,18 +176,28 @@ export default function Reader({ data }: { data: ReaderData }) {
     }
   }, [data.article.id, simplified]);
 
+  // Native articles sit well above HSK 4 even after filtering, so by default
+  // the rewrite starts as soon as the page opens. The ref stops React's
+  // development double-run from paying for it twice.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!settingsReady || !settings.autoRewrite || autoStarted.current) return;
+    autoStarted.current = true;
+    loadSimplified();
+  }, [settingsReady, settings.autoRewrite, loadSimplified]);
+
   const shown = showSimple && simplified ? simplified.paragraphs : data.paragraphs;
   const shownTitle =
     showSimple && simplified ? simplified.titleTokens : data.titleTokens;
 
   const stats = useMemo(() => {
-    const words = data.paragraphs.flat().filter((t) => t.z);
+    const words = shown.flat().filter((t) => t.z);
     const hard = new Set(words.filter((t) => (t.l ?? 7) > 4).map((t) => t.t));
-    const chars = data.paragraphs
+    const chars = shown
       .flat()
       .reduce((n, t) => n + (t.z ? t.t.length : 0), 0);
     return { chars, hard: hard.size };
-  }, [data.paragraphs]);
+  }, [shown]);
 
   const renderTokens = (tokens: Token[], keyPrefix: string) =>
     tokens.map((tok, i) => {
@@ -294,6 +311,23 @@ export default function Reader({ data }: { data: ReaderData }) {
             </select>
           </label>
 
+          <label
+            style={{
+              fontSize: "0.8125rem",
+              color: "var(--ink-soft)",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.4rem",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={settings.autoRewrite}
+              onChange={(e) => update({ autoRewrite: e.target.checked })}
+            />
+            Always open at HSK 4
+          </label>
+
           <div style={{ marginLeft: "auto", display: "flex", gap: "0.5rem" }}>
             {simplified || !simplifying ? (
               <button
@@ -301,7 +335,7 @@ export default function Reader({ data }: { data: ReaderData }) {
                 onClick={() => (showSimple ? setShowSimple(false) : loadSimplified())}
                 disabled={simplifying}
               >
-                {showSimple ? "Original" : "Rewrite at HSK 4"}
+                {showSimple ? "Show original" : "Rewrite at HSK 4"}
               </button>
             ) : (
               <span className="chip" style={{ cursor: "default" }}>
@@ -319,6 +353,19 @@ export default function Reader({ data }: { data: ReaderData }) {
             </a>
           </div>
         </div>
+
+        {simplifying && !simplified && (
+          <p
+            style={{
+              color: "var(--ink-faint)",
+              fontSize: "0.875rem",
+              marginBottom: "1rem",
+            }}
+          >
+            Rewriting this at HSK 4, usually about ten seconds. The original is below
+            in the meantime.
+          </p>
+        )}
 
         {simplifyError && (
           <p

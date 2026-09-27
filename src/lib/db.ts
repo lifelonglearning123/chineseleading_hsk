@@ -109,6 +109,10 @@ create table if not exists articles (
 create index if not exists articles_published_idx on articles (published_at desc nulls last);
 create index if not exists articles_source_idx on articles (source);
 
+alter table articles add column if not exists grade jsonb;
+alter table articles add column if not exists ease int;
+alter table articles add column if not exists readable boolean;
+
 create table if not exists saved_words (
   word           text primary key,
   pinyin         text,

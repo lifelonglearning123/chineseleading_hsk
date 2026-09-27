@@ -1,24 +1,34 @@
 /**
  * News ingestion.
  *
- * Two publishers, because no single one covers both registers:
+ * Several publishers, because no single one covers everything worth reading:
  *
  *   中国新闻网 (China News Service) over RSS — wire copy: politics, business,
  *   society, sport, culture. Formal written Chinese.
  *
  *   网易娱乐 (NetEase Entertainment) over its JSON listing — celebrity, film
  *   and TV. Self-media prose, much closer to how people actually write online,
- *   and far more fun to read than a policy announcement.
+ *   and far more fun to read than a policy announcement. 网易时尚 uses the
+ *   same listing format for lifestyle and social-trend pieces.
+ *
+ *   果壳 (Guokr) over its JSON API — everyday popular science: food safety,
+ *   animals, why the moon looks late. Chatty, and almost free of foreign names.
+ *
+ *   游研社 (yystv) over RSS — games and internet culture, in short, jokey
+ *   sentences.
  *
  * Note on sources that did not work: People's Daily (people.com.cn/rss/*) does
  * not respond at all. The Xinhua feeds under news.cn still serve XML but have
  * not updated since December 2022. Sina's entertainment RSS is frozen in 2018
  * and its listing page renders client-side. NetEase's `newsdata_music.js` is
- * stale since 2022, so only index/star/movie/tv are used.
+ * stale since 2022, so only index/star/movie/tv are used. lady, travel and
+ * baby.163.com do not respond; jiankang.163.com stopped in May 2026. Tech
+ * sites (少数派, 爱范儿, IT之家) work but are thick with Latin product names.
+ * 知乎日报 story pages are a JavaScript shell with no text.
  */
 
-export type ListingKind = "rss" | "netease";
-export type BodyKind = "chinanews" | "netease";
+export type ListingKind = "rss" | "netease" | "guokr";
+export type BodyKind = "chinanews" | "netease" | "guokr" | "yystv";
 
 export interface Source {
   id: string;
@@ -54,19 +64,41 @@ const NETEASE = (
 
 export const SOURCES: Source[] = [
   // Lighter reading first: this is a learning app, not a newspaper.
+  {
+    id: "science",
+    label: "Curious",
+    labelZh: "果壳",
+    url: "https://www.guokr.com/beta/proxy/science_api/articles?retrieve_type=by_category&page=1",
+    listing: "guokr",
+    body: "guokr",
+  },
+  {
+    id: "lifestyle",
+    label: "Lifestyle",
+    labelZh: "时尚",
+    url: "https://fashion.163.com/special/002688FE/fashion_datalist.js",
+    listing: "netease",
+    body: "netease",
+  },
   NETEASE("star", "star", "Celebrity", "明星"),
   NETEASE("tv", "tv", "TV drama", "剧集"),
   NETEASE("film", "movie", "Film", "电影"),
   NETEASE("showbiz", "index", "Showbiz", "娱乐"),
-  CNS("culture", "Culture", "文化"),
-  CNS("society", "Society", "社会"),
+  {
+    id: "games",
+    label: "Games",
+    labelZh: "游戏",
+    url: "https://www.yystv.cn/rss/feed",
+    listing: "rss",
+    body: "yystv",
+  },
   CNS("life", "Life", "生活"),
-  CNS("china", "China", "国内"),
-  CNS("world", "World", "国际"),
-  CNS("finance", "Business", "财经"),
-  CNS("sports", "Sport", "体育"),
   CNS("health", "Health", "健康"),
-  CNS("edu", "Education", "教育"),
+  CNS("society", "Society", "社会"),
+  CNS("culture", "Culture", "文化"),
+  CNS("sports", "Sport", "体育"),
+  // 国内, 国际, 财经 and 教育 were dropped: nearly everything in them is
+  // meetings, policy and foreign names, and lib/grade.ts turned away all of it.
 ];
 
 export interface FeedItem {
@@ -118,7 +150,10 @@ function decodeEntities(s: string): string {
 }
 
 function stripTags(s: string): string {
-  return decodeEntities(s.replace(/<[^>]*>/g, ""));
+  // Unwrap CDATA first: "<![CDATA[" looks like a tag, and stripping it as
+  // one deletes the whole title.
+  const unwrapped = s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
+  return decodeEntities(unwrapped.replace(/<[^>]*>/g, ""));
 }
 
 function tag(block: string, name: string): string {
@@ -200,11 +235,52 @@ export function parseNetease(source: string, body: string): FeedItem[] {
   return items;
 }
 
+interface GuokrItem {
+  id?: number;
+  title?: string;
+  summary?: string;
+  date_published?: string;
+}
+
+/** Guokr posts that are really shopping promotions. */
+const GUOKR_ADS = /专场|好物|开播|直播间|限时|优惠/;
+
+/** Guokr's science API: a plain JSON array, ten posts per page. */
+export function parseGuokr(source: string, body: string): FeedItem[] {
+  let raw: GuokrItem[];
+  try {
+    raw = JSON.parse(body) as GuokrItem[];
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(raw)) return [];
+
+  const items: FeedItem[] = [];
+  for (const item of raw) {
+    const title = item.title?.trim();
+    if (!item.id || !title || GUOKR_ADS.test(title)) continue;
+    const date = item.date_published ? new Date(item.date_published) : null;
+    items.push({
+      url: `https://www.guokr.com/article/${item.id}/`,
+      title,
+      summary: (item.summary ?? "").replace(/\s+/g, " ").trim().slice(0, 400),
+      source,
+      publishedAt: date && !Number.isNaN(date.valueOf()) ? date : null,
+    });
+  }
+  return items;
+}
+
 export async function fetchFeed(source: Source): Promise<FeedItem[]> {
   const text = await fetchText(source.url);
-  return source.listing === "netease"
-    ? parseNetease(source.id, text)
-    : parseFeed(text, source.id);
+  switch (source.listing) {
+    case "netease":
+      return parseNetease(source.id, text);
+    case "guokr":
+      return parseGuokr(source.id, text);
+    default:
+      return parseFeed(text, source.id);
+  }
 }
 
 /** Lines that are photo credits, boilerplate or editorial furniture. */
@@ -229,6 +305,10 @@ const NOISE = [
   /^关注我/,
   /举报\/反馈/,
   /^特别声明/,
+  // Guokr image credits and embedded-post captions.
+  /丨(图虫创意|gif|图源)/,
+  /^图源[:：]/,
+  /^(抖音|小红书|微博)@/,
 ];
 
 interface BodyRegion {
@@ -244,6 +324,15 @@ const REGIONS: Record<BodyKind, BodyRegion> = {
   netease: {
     start: /<div[^>]*class="[^"]*post_body[^"]*"[^>]*>/i,
     stop: /class="[^"]*(post_statement|post_next|post_recommend|post_crumb)/i,
+  },
+  // styled-components class: match the stable name, not the generated hash.
+  guokr: {
+    start: /<div[^>]*styled__ArticleContent[^>]*>/i,
+    stop: /class="[^"]*(end-line|styled__RelateArticleWrap)|id="adArticleBottom"/i,
+  },
+  yystv: {
+    start: /<div class="doc-content[^"]*"[^>]*>/i,
+    stop: /class="(doc-show-more|article-handle-container|article-linked-container)/i,
   },
 };
 

@@ -8,14 +8,23 @@ import {
   bodyKindFor,
   mapLimit,
 } from "@/lib/feeds";
-import { annotateBody } from "@/lib/dict";
+import { analyse } from "@/lib/analyse";
+import { GRADE_VERSION } from "@/lib/grade";
+import type { Token } from "@/lib/dict";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-/** How many new articles to fully download per source on one refresh. */
-const BODIES_PER_SOURCE = 4;
+/**
+ * How many new articles to fully download per source on one refresh. Only
+ * downloaded articles can be graded, and only graded ones reach the list, so
+ * this is also how many candidates each source gets to put forward.
+ */
+const BODIES_PER_SOURCE = 6;
+
+/** Rows graded under older rules (or none), regraded a batch at a time. */
+const BACKFILL_BATCH = 200;
 
 async function refresh(sourceIds: string[]): Promise<{
   added: number;
@@ -43,7 +52,7 @@ async function refresh(sourceIds: string[]): Promise<{
     }
   });
 
-  const pending: { id: number; url: string; sourceId: string }[] = [];
+  const pending: { id: number; url: string; title: string; sourceId: string }[] = [];
 
   for (const { source, items } of listings) {
     let fresh = 0;
@@ -52,13 +61,13 @@ async function refresh(sourceIds: string[]): Promise<{
         `insert into articles (url, title, summary, source, published_at)
          values ($1, $2, $3, $4, $5)
          on conflict (url) do nothing
-         returning id, url`,
+         returning id, url, title`,
         [item.url, item.title, item.summary, item.source, item.publishedAt],
-      )) as { id: number; url: string }[];
+      )) as { id: number; url: string; title: string }[];
       if (!rows.length) continue;
       added += 1;
       if (fresh < BODIES_PER_SOURCE) {
-        pending.push({ id: rows[0].id, url: rows[0].url, sourceId: source.id });
+        pending.push({ ...rows[0], sourceId: source.id });
         fresh += 1;
       }
     }
@@ -79,28 +88,56 @@ async function refresh(sourceIds: string[]): Promise<{
   for (const hit of fetched) {
     if (!hit) continue;
     const { row, body } = hit;
-    const tokens = annotateBody(body);
-    const charCount = body.replace(/\s/g, "").length;
-    const hardCount = new Set(
-      tokens.flat().filter((t) => t.z && (t.l ?? 7) > 4).map((t) => t.t),
-    ).size;
+    const { tokens, charCount, hardCount, grade } = analyse(row.title, body);
     // NetEase listings carry keywords rather than a standfirst, so fall back
     // to the opening line once the body is in hand.
     const lead = body.split("\n")[0]?.slice(0, 220) ?? "";
     await client(
       `update articles
           set body = $2, tokens = $3, char_count = $4, hard_count = $5,
+              grade = $7, ease = $8, readable = $9,
               summary = case
                           when summary is null or summary = '' then $6
                           else summary
                         end
         where id = $1`,
-      [row.id, body, JSON.stringify(tokens), charCount, hardCount, lead],
+      [
+        row.id,
+        body,
+        JSON.stringify(tokens),
+        charCount,
+        hardCount,
+        lead,
+        JSON.stringify(grade),
+        grade.ease,
+        grade.ok,
+      ],
     );
     bodies += 1;
   }
 
+  await backfillGrades(client);
+
   return { added, bodies, errors };
+}
+
+/** Regrade articles whose grade predates the current rules. */
+async function backfillGrades(client: Awaited<ReturnType<typeof sql>>) {
+  const rows = (await client(
+    `select id, title, body, tokens from articles
+      where tokens is not null
+        and (grade is null or coalesce((grade->>'v')::int, 0) < $2)
+      limit $1`,
+    [BACKFILL_BATCH, GRADE_VERSION],
+  )) as { id: number; title: string; body: string; tokens: Token[][] }[];
+
+  for (const row of rows) {
+    const { grade } = analyse(row.title, row.body, row.tokens);
+    await client(
+      `update articles set grade = $2, ease = $3, readable = $4 where id = $1`,
+      [row.id, JSON.stringify(grade), grade.ease, grade.ok],
+    );
+  }
 }
 
 /** Vercel Cron hits this with the CRON_SECRET bearer token. */

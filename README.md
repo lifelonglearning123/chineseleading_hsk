@@ -1,6 +1,6 @@
 # 读报 — Chinese News Reader
 
-Read today's Chinese news at HSK 4. Tap any word for pinyin, meaning and a
+Read interesting Chinese at HSK 4. Tap any word for pinyin, meaning and a
 character breakdown, get pinyin printed above words that are above your level,
 and save what you don't know to a vocabulary list you can review.
 
@@ -9,18 +9,30 @@ No Supabase.
 
 ## What it does
 
-**Today's news.** Two publishers, because one register gets dull fast.
+**Today's reading.** Casual sources first, because a learner reads more of
+what they enjoy.
 
-网易娱乐 (NetEase Entertainment) supplies 明星, 剧集, 电影 and 娱乐: celebrity
+果壳 (Guokr) supplies everyday popular science: a poisonous star anise in the
+supermarket, a bear meme, why the moon is full late this year.
+
+网易 (NetEase) supplies 时尚, 明星, 剧集, 电影 and 娱乐: lifestyle, celebrity
 gossip, TV and film. This is self-media prose, so you get how people actually
 write online, including words a textbook will never teach you like 官宣, 素颜
 and 娱乐瓜.
 
-中国新闻网 (China News Service) supplies 文化, 社会, 生活, 国内, 国际, 财经,
-体育, 健康 and 教育. Formal wire copy, useful for the written register.
+游研社 (yystv) supplies games and internet culture, in short, jokey sentences.
 
-Each article shows its character count and how many distinct words sit above
-HSK 4, so you can pick something the right size.
+中国新闻网 (China News Service) supplies 生活, 健康, 社会, 文化 and 体育. Its
+国内, 国际, 财经 and 教育 feeds were dropped: almost everything in them was
+meetings, policy and foreign names.
+
+**Only what is worth reading.** Every downloaded article is graded
+(`src/lib/grade.ts`) on three things: the share of words at HSK 4 or below,
+foreign names per thousand characters (唐纳德·特朗普 is six characters of sound
+that teach nothing), and official-register words like 推进, 部署 and 相关部门.
+Articles that fail go to a "skipped" list at the bottom of the page rather than
+the main one, and within each day the easiest come first, labelled Easy,
+Medium or Harder.
 
 **Reading view.** The article is segmented into words, not characters. Words
 above your level carry pinyin above them automatically; you choose the cut-off,
@@ -38,9 +50,13 @@ habitually combines with, two example sentences pitched just above HSK 4,
 near-synonyms you would confuse it with, and a memory hook. Explanations are
 cached, so the same word is free the second time.
 
-**Rewrite at HSK 4.** Any article can be rewritten as a graded reader would do
-it, keeping every fact, name and number, plus a short English summary. The
-rewrite is annotated and cached exactly like the original.
+**Rewrite at HSK 4.** Articles open rewritten as a graded reader would do it,
+because even light native prose is well above HSK 4: the old HSK 1-4 lists
+cover only about 1,200 words, so a gossip piece scores 60-75% known words and
+the rewrite brings it to 80-90%. The rewrite keeps the story, the main people
+and what makes it interesting, and drops minor names, lists and officialese,
+plus a short English summary. It is annotated and cached exactly like the
+original. Untick **Always open at HSK 4** to open originals instead.
 
 **My words.** Everything you saved, with the sentence you found it in and a
 link back to the article. Sort by newest, hardest, or least reviewed, and run
@@ -99,6 +115,15 @@ npm run typecheck        # tsc --noEmit
 node scripts/verify.ts   # live check of feeds, segmentation and the model
 ```
 
+```
+node scripts/grade-sample.ts 6 science star   # grade live articles per source
+```
+
+`grade-sample.ts` prints each article's coverage, foreign-name and formality
+scores and whether it passes, which is how the thresholds in `grade.ts` were
+set. Bump `GRADE_VERSION` after changing them and the next refresh regrades
+stored articles.
+
 `scripts/verify.ts` fetches a real article, segments and annotates it, prints
 the vocabulary it would extract, and makes one explanation and one rewrite call.
 It needs `OPENAI_API_KEY` but not the database, which makes it the quickest way
@@ -150,9 +175,12 @@ assuming. What did not work: People's Daily (`people.com.cn/rss/*`) does not
 respond at all; the Xinhua feeds under `news.cn` still serve XML but stopped
 updating in December 2022; Sina's entertainment RSS is frozen in 2018 and its
 listing page renders client-side; NetEase's `newsdata_music.js` is stale since
-2022. China News Service still publishes live RSS, and NetEase Entertainment
-exposes a JSON listing at `ent.163.com/special/000380VU/newsdata_<slug>.js`
-carrying titles, article URLs and Beijing-time timestamps.
+2022; lady, travel and baby.163.com do not respond; 知乎日报 story pages are a
+JavaScript shell with no text; tech sites (少数派, 爱范儿, IT之家) work but are
+thick with Latin product names. China News Service still publishes live RSS,
+NetEase exposes JSONP listings (`ent.163.com/special/000380VU/newsdata_<slug>.js`,
+`fashion.163.com/special/002688FE/fashion_datalist.js`) carrying titles, article
+URLs and Beijing-time timestamps, Guokr has a JSON API, and 游研社 has RSS.
 
 Adding a source is one entry in `SOURCES` in `src/lib/feeds.ts`. A source
 declares how its listing is parsed (`listing`) and which container holds the

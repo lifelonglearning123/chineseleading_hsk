@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql, dbErrorMessage } from "@/lib/db";
 import { annotateBody, type Token } from "@/lib/dict";
-import { simplifyArticle } from "@/lib/ai";
+import { simplifyArticle, SIMPLIFY_VERSION } from "@/lib/ai";
 
 export const runtime = "nodejs";
 export const maxDuration = 90;
@@ -10,7 +10,7 @@ interface Row {
   id: number;
   title: string;
   body: string | null;
-  simplified: { level: number; titleTokens: Token[]; paragraphs: Token[][]; englishSummary: string } | null;
+  simplified: { level: number; v?: number; titleTokens: Token[]; paragraphs: Token[][]; englishSummary: string } | null;
 }
 
 /**
@@ -45,7 +45,11 @@ export async function POST(request: Request) {
     }
     const row = rows[0];
 
-    if (row.simplified && row.simplified.level === level) {
+    if (
+      row.simplified &&
+      row.simplified.level === level &&
+      row.simplified.v === SIMPLIFY_VERSION
+    ) {
       return NextResponse.json({ ...row.simplified, cached: true });
     }
     if (!row.body) {
@@ -58,6 +62,7 @@ export async function POST(request: Request) {
     const result = await simplifyArticle(row.title, row.body, level);
     const payload = {
       level,
+      v: SIMPLIFY_VERSION,
       titleTokens: annotateBody(result.title)[0] ?? [],
       paragraphs: result.paragraphs
         .filter((p) => p.trim())

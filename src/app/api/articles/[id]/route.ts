@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql, dbErrorMessage } from "@/lib/db";
 import { annotateBody, vocabulary, type Token } from "@/lib/dict";
+import { analyse } from "@/lib/analyse";
 import { fetchArticleBody, bodyKindFor } from "@/lib/feeds";
 
 export const runtime = "nodejs";
@@ -58,16 +59,23 @@ export async function GET(
     }
 
     if (!tokens) {
-      tokens = annotateBody(body);
-      const charCount = body.replace(/\s/g, "").length;
-      const hardCount = new Set(
-        tokens.flat().filter((t) => t.z && (t.l ?? 7) > 4).map((t) => t.t),
-      ).size;
+      const analysis = analyse(row.title, body);
+      tokens = analysis.tokens;
       await client(
         `update articles
-            set body = $2, tokens = $3, char_count = $4, hard_count = $5
+            set body = $2, tokens = $3, char_count = $4, hard_count = $5,
+                grade = $6, ease = $7, readable = $8
           where id = $1`,
-        [articleId, body, JSON.stringify(tokens), charCount, hardCount],
+        [
+          articleId,
+          body,
+          JSON.stringify(tokens),
+          analysis.charCount,
+          analysis.hardCount,
+          JSON.stringify(analysis.grade),
+          analysis.grade.ease,
+          analysis.grade.ok,
+        ],
       );
     }
 

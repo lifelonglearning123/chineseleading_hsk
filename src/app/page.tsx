@@ -12,6 +12,8 @@ interface Article {
   published_at: string | null;
   char_count: number | null;
   hard_count: number | null;
+  ease: number | null;
+  grade: { coverage: number; reasons: string[] } | null;
   has_body: boolean;
 }
 
@@ -19,6 +21,14 @@ interface Source {
   id: string;
   label: string;
   labelZh: string;
+}
+
+/** A plain-English difficulty label from the grader's 0-100 ease score. */
+function easeLabel(ease: number | null): { text: string; tone: string } | null {
+  if (ease === null) return null;
+  if (ease >= 55) return { text: "Easy", tone: "var(--accent)" };
+  if (ease >= 25) return { text: "Medium", tone: "var(--ink-soft)" };
+  return { text: "Harder", tone: "var(--saved)" };
 }
 
 function timeAgo(iso: string | null): string {
@@ -36,6 +46,9 @@ export default function HomePage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
   const [active, setActive] = useState<string | null>(null);
+  // Show the articles the grader turned away instead of the readable ones.
+  const [skipped, setSkipped] = useState(false);
+  const [otherCount, setOtherCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,17 +59,21 @@ export default function HomePage() {
   // articles that actually loaded.
   const requestId = useRef(0);
 
-  const load = useCallback(async (source: string | null) => {
+  const load = useCallback(async (source: string | null, showSkipped: boolean) => {
     const id = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
-      const qs = source ? `?source=${encodeURIComponent(source)}` : "";
+      const params = new URLSearchParams();
+      if (source) params.set("source", source);
+      if (showSkipped) params.set("skipped", "1");
+      const qs = params.size ? `?${params}` : "";
       const res = await fetch(`/api/articles${qs}`);
       const json = await res.json();
       if (id !== requestId.current) return;
       if (json.sources) setSources(json.sources);
       setArticles(json.articles ?? []);
+      setOtherCount(json.otherCount ?? 0);
       setError(json.error ?? null);
     } catch (err) {
       if (id !== requestId.current) return;
@@ -67,8 +84,8 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    load(active);
-  }, [active, load]);
+    load(active, skipped);
+  }, [active, skipped, load]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -77,13 +94,13 @@ export default function HomePage() {
       const res = await fetch("/api/refresh", { method: "POST" });
       const json = await res.json();
       if (json.error) setError(json.error);
-      await load(active);
+      await load(active, skipped);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setRefreshing(false);
     }
-  }, [active, load]);
+  }, [active, skipped, load]);
 
   return (
     <div>
@@ -96,9 +113,11 @@ export default function HomePage() {
           flexWrap: "wrap",
         }}
       >
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>Today&apos;s news</h1>
+        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>
+          {skipped ? "Skipped articles" : "Today’s reading"}
+        </h1>
         <span style={{ fontSize: "0.8125rem", color: "var(--ink-faint)" }}>
-          网易娱乐 · 中国新闻网
+          果壳 · 网易 · 游研社 · 中国新闻网
         </span>
         <button
           className="chip"
@@ -177,7 +196,28 @@ export default function HomePage() {
         <p style={{ color: "var(--ink-faint)" }}>Loading…</p>
       )}
 
-      {!loading && articles.length === 0 && !error && (
+      {skipped && (
+        <p style={{ fontSize: "0.875rem", color: "var(--ink-soft)", margin: "0 0 1rem" }}>
+          These were left out for being too hard, too official or full of foreign
+          names. They are still here if you want one.{" "}
+          <button className="chip" onClick={() => setSkipped(false)}>
+            Back to the reading list
+          </button>
+        </p>
+      )}
+
+      {!loading && articles.length === 0 && !error && !skipped && otherCount > 0 && (
+        <div className="card" style={{ padding: "1.5rem", textAlign: "center" }}>
+          <p style={{ margin: "0 0 0.85rem", color: "var(--ink-soft)" }}>
+            Nothing here passed the HSK 4 check yet. Fetch again later for more.
+          </p>
+          <button className="btn btn-primary" onClick={refresh} disabled={refreshing}>
+            {refreshing ? "Fetching…" : "Fetch latest"}
+          </button>
+        </div>
+      )}
+
+      {!loading && articles.length === 0 && !error && !skipped && otherCount === 0 && (
         <div className="card" style={{ padding: "1.5rem", textAlign: "center" }}>
           <p style={{ margin: "0 0 0.85rem", color: "var(--ink-soft)" }}>
             No articles yet. Pull today&apos;s headlines to get started.
@@ -221,10 +261,19 @@ export default function HomePage() {
                   <span>{a.char_count} chars</span>
                 </>
               ) : null}
-              {a.hard_count ? (
+              {(() => {
+                const label = easeLabel(a.ease);
+                return label ? (
+                  <>
+                    <span>·</span>
+                    <span style={{ color: label.tone, fontWeight: 600 }}>{label.text}</span>
+                  </>
+                ) : null;
+              })()}
+              {skipped && a.grade?.reasons.length ? (
                 <>
                   <span>·</span>
-                  <span>{a.hard_count} above HSK 4</span>
+                  <span>{a.grade.reasons.join(", ")}</span>
                 </>
               ) : null}
             </div>
@@ -254,6 +303,25 @@ export default function HomePage() {
           </Link>
         ))}
       </div>
+
+      {!skipped && otherCount > 0 && !loading && (
+        <p style={{ textAlign: "center", margin: "1.5rem 0 0" }}>
+          <button
+            onClick={() => setSkipped(true)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--ink-faint)",
+              fontSize: "0.8125rem",
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            {otherCount} {otherCount === 1 ? "article" : "articles"} skipped as too hard,
+            too official or full of foreign names
+          </button>
+        </p>
+      )}
     </div>
   );
 }

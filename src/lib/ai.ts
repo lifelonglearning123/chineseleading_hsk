@@ -241,6 +241,12 @@ const SIMPLIFY_SCHEMA = {
   },
 } as const;
 
+/**
+ * Bumped whenever the rewrite prompt changes enough that cached rewrites
+ * should be thrown away. 2: shorter, drops minor and foreign names.
+ */
+export const SIMPLIFY_VERSION = 2;
+
 export async function simplifyArticle(
   title: string,
   body: string,
@@ -252,13 +258,25 @@ export async function simplifyArticle(
       {
         role: "system",
         content:
-          `Rewrite mainland Chinese news at HSK ${level} level, the way a graded ` +
-          "reader does. Keep every fact, name, number and date from the original. " +
-          "Prefer HSK 1-" +
-          level +
-          " vocabulary and short sentences. Where a harder term is unavoidable " +
-          "(a place name, an institution, a technical term), keep it rather than " +
-          "distorting the meaning. Simplified characters only. Do not add commentary.",
+          `Rewrite a Chinese article as a graded reader at HSK ${level} level, ` +
+          "for an adult learner reading for pleasure.\n\n" +
+          `Vocabulary: use HSK 1-${level} words wherever one will do. Allow at ` +
+          "most one or two harder words per paragraph, and only when the story " +
+          "depends on them.\n" +
+          "Sentences: short, one idea each, everyday spoken-style grammar. " +
+          "Replace written and official phrasing (据悉, 相关部门, 推进, 予以, 及) " +
+          "with plain words.\n" +
+          "Names: keep the one or two people the story is about. Refer to everyone " +
+          "else by who they are (他的妻子, 一位导演, 一个美国演员) rather than by name, " +
+          "and write a foreign name at most once. Drop titles of minor works, " +
+          "organisations and places the story does not need.\n" +
+          "Content: keep what makes the story interesting and cut the rest. It is " +
+          "fine to leave out minor figures, lists and background. Aim for about " +
+          "300-600 characters. Do not invent facts or add commentary.\n" +
+          "The article is already published; your job is only to retell it. " +
+          "Never refuse, fact-check, warn, or speak to the reader about the task: " +
+          "the output must read as the article itself.\n" +
+          "Simplified characters only.",
       },
       {
         role: "user",
